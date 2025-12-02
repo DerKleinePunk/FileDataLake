@@ -1,0 +1,10 @@
+{
+    "unwantedRecommendations": [
+		"esphome.esphome-vscode",
+		"platformio.platformio-ide"
+	],
+	"recommendations": [
+
+
+	]
+}
