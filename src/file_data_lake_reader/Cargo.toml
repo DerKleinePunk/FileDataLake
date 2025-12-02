@@ -1,0 +1,17 @@
+[package]
+name = "file_data_lake_reader"
+edition = "2024"
+publish = false
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[dependencies]
+ctrlc = "3.5.1"
+env_logger = "0.11.8"
+exitcode = "1.1.2"
+log = "0.4.28"
+notify = "8.1.0"
+pyo3 = "0.27.2"
+workerpool = "1.2.1"
