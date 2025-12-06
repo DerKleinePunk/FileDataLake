@@ -1,0 +1,21 @@
+let temp_file_path = form.file.file.path();
+let file_name: &str = form
+    .file
+    .file_name
+    .as_ref()
+    .map(|m| m.as_ref())
+    .unwrap_or("null");
+
+let app_data = data.lock().unwrap();
+let file_path = PathBuf::from(&app_data.upload_path);
+
+log::debug!("copy file from {temp_file_path:?} to {file_path:?}");
+//match std::fs::rename(temp_file_path, file_path)
+let temp_file = &form.file;
+//temp_file.file.persist(file_path);
+
+/*f.file.persist(file_path) not work wenn anderes Laufwerk
+if let Err( error  ) =  {
+    log::error!("{error:?}");
+    return HttpResponse::InternalServerError().body(error.to_string())
+}*/
