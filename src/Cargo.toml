@@ -1,5 +1,5 @@
 [workspace]
-members = ["file_data_lake_reader"]
+members = ["file_data_lake_reader", "file_data_lake_webserver"]
 resolver = "3"
 
 [workspace.package]

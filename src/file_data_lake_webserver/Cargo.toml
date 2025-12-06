@@ -1,5 +1,5 @@
 [package]
-name = "file_data_lake_reader"
+name = "file_data_lake_webserver"
 edition = "2024"
 publish = false
 version.workspace = true
@@ -8,14 +8,9 @@ description.workspace = true
 documentation.workspace = true
 
 [dependencies]
-ctrlc = "3.5.1"
+actix-web = "4.12.1"
 env_logger = "0.11.8"
-exitcode = "1.1.2"
-log = "0.4.28"
-notify = "8.1.0"
-pyo3 = "0.27.2"
-workerpool = "1.2.1"
 
 [[bin]]
-name = "fdl_reader"
+name = "fdl_webserver"
 path = "src/main.rs"

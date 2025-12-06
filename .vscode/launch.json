@@ -5,10 +5,22 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(Windows) Starten",
+            "name": "(Win) Reader",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/src/target/debug/file_data_lake_reader.exe",
+            "program": "${workspaceFolder}/src/target/debug/fdl_reader.exe",
+            "args": ["c:/temp/"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/src/target/",
+            "environment": [],
+            "console": "externalTerminal",
+            "preLaunchTask": "${defaultBuildTask}"
+        },
+        {
+            "name": "(Win) Webserver",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/target/debug/fdl_webserver.exe",
             "args": ["c:/temp/"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/src/target/",

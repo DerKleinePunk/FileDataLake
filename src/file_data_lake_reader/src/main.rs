@@ -18,6 +18,7 @@ use pyo3::types::PyList;
 //Hints
 //https://docs.rs/workerpool/latest/workerpool/
 //https://pyo3.rs/main/python-from-rust/calling-existing-code.html
+//https://github.com/raddevus/watcher/blob/main/src/main.rs
 
 pub mod new_file_worker;
 
@@ -160,6 +161,7 @@ fn watch<P: AsRef<Path>>(
             match event {
                 Ok(event_ok) => {
                     log::info!("New Event: {event_ok:?}");
+                    //event_ok.need_rescan();
                     //todo start Work
                     match event_ok.kind {
                         EventKind::Create(CreateKind::Any) => {
