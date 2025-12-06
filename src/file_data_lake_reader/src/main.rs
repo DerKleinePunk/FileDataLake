@@ -1,26 +1,40 @@
 use notify::event::CreateKind;
 use notify::{Config, EventKind, RecursiveMode, Watcher};
 use pyo3::prelude::*;
-use pyo3::types::IntoPyDict;
-use std::collections::HashMap;
 use std::env;
-use std::ffi::CString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
-use std::fs;
 use workerpool::Pool;
 use workerpool::thunk::{Thunk, ThunkWorker};
-use pyo3::types::PyList;
+use confy::ConfyError;
+use serde_derive::{Serialize, Deserialize};
+
+use crate::app_dtos::FileEntry;
 
 //Hints
 //https://docs.rs/workerpool/latest/workerpool/
 //https://pyo3.rs/main/python-from-rust/calling-existing-code.html
 //https://github.com/raddevus/watcher/blob/main/src/main.rs
 
-pub mod new_file_worker;
+mod new_file_worker;
+mod python_runner;
+mod database_handler;
+mod app_dtos;
+
+/// `AppConfigFile` implements `Default`
+impl ::std::default::Default for AppConfigFile {
+    fn default() -> Self { Self { version: 0, database: "fdl.toml".into() } }
+}
+
+#[derive(Serialize, Deserialize)]
+struct AppConfigFile {
+    version: u64,
+    database: String,
+}
+
 
 fn main() -> std::io::Result<()> {
     //Todo Put to Config
@@ -52,6 +66,8 @@ fn main() -> std::io::Result<()> {
         }
     }
 
+    let cfg: AppConfigFile = confy::load("fdl", "reader").unwrap();
+
     let worker_pool = Pool::<ThunkWorker<()>>::new(n_workers);
 
     //Starting Python
@@ -61,6 +77,19 @@ fn main() -> std::io::Result<()> {
         "Watching {} and pool is running",
         Path::new(file_watch_path).display()
     );
+
+    log::debug!("Starting Database");
+
+    let db_file_name = Path::new(&cfg.database);
+    let mut dbstate = database_handler::LocalDbState::new(&db_file_name);
+    let result = database_handler::LocalDbState::create_database(&mut dbstate);
+    if result.is_err() {
+        let error = result.err();
+        log::error!("Error: {error:?}");
+        //Todo make it better
+        std::process::exit(exitcode::DATAERR);
+    }
+    //Todo check DB Version and try Update
 
     println!("Waiting for Ctrl-C...");
 
@@ -73,67 +102,25 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn new_file_hander<P: AsRef<Path>>(path: P) -> notify::Result<()> {
-    let fileSize = new_file_worker::print_file_size(path);
+//<P: AsRef<Path>>
+fn new_file_hander(path: &Path) -> notify::Result<()> {
+    let file_size = new_file_worker::print_file_size(path)?;
 
     let app_exe = env::current_exe()?;
     let app_path = app_exe.parent().unwrap();
     let pysourcepath = app_path.join("../../python/");
     let file_name = pysourcepath.join("example.py");
-    log::debug!("python file: {file_name:?}");
-    let file_text = fs::read_to_string(file_name)?;
-    let py_app_text = CString::new(file_text).unwrap();
-    let python_result = hello_from_python(&py_app_text);
+    let python_result = python_runner::run_python_file(&file_name);
+
+    let mut file_entry = FileEntry::new();
+    file_entry.name = path.file_name().unwrap().to_str().unwrap().to_string();
+    file_entry.size = file_size;
+
+    println!("test {file_entry:?}");
 
     Ok(())
 }
 
-fn hello_from_python(py_app_text: &CString) -> PyResult<()> {
-    /*let sys = py.import("sys")?;
-    let version: String = sys.get(py, "version")?.extract(py)?;
-
-    let locals = PyDict::new(py);
-    locals.set_item(py, "os", py.import("os")?)?;
-    let user: String = py.eval("os.getenv('USER') or os.getenv('USERNAME')", None, Some(&locals))?.extract(py)?;
-
-    log::debug!("Hello {}, I'm Python {}", user, version);*/
-
-    let key1 = "key1";
-    let val1 = 1;
-    let key2 = "key2";
-    let val2 = 2;
-
-    Python::attach(|py| {
-        /*let syspath = py
-            .import("sys")?
-            .getattr("path")?
-            .cast_into::<PyList>()?;
-        syspath.insert(0, path)?;*/
-        let fun: Py<PyAny> = PyModule::from_code(
-            py,
-            py_app_text.as_c_str(),
-            c"example.py",
-            c"",
-        )?
-        .getattr("example")?
-        .into();
-
-        // call object with PyDict
-        let kwargs = [(key1, val1)].into_py_dict(py)?;
-        fun.call(py, (), Some(&kwargs))?;
-
-        // pass arguments as Vec
-        let kwargs = vec![(key1, val1), (key2, val2)];
-        fun.call(py, (), Some(&kwargs.into_py_dict(py)?))?;
-
-        // pass arguments as HashMap
-        let mut kwargs = HashMap::<&str, i32>::new();
-        kwargs.insert(key1, 1);
-        fun.call(py, (), Some(&kwargs.into_py_dict(py)?))?;
-
-        Ok(())
-    })
-}
 
 fn watch<P: AsRef<Path>>(
     path: P,
@@ -166,7 +153,7 @@ fn watch<P: AsRef<Path>>(
                     match event_ok.kind {
                         EventKind::Create(CreateKind::Any) => {
                             worker_pool.execute(Thunk::of(move || {
-                                let _ = new_file_hander(event_ok.paths[0].clone());
+                                let _ = new_file_hander(&event_ok.paths[0]);
                             }));
                         }
                         _other => {
