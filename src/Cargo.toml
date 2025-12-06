@@ -4,8 +4,8 @@ resolver = "3"
 
 [workspace.package]
 version = "0.0.0"
-authors = ["The little Punk"]
-description = "A short description of my package"
+authors = ["The little Punk", "Plikoener"]
+description = "Tools for Archiving Files"
 documentation = "https://example.com/bar"
 publish = false
 license = "GPL-2.0-or-later WITH Bison-exception-2.2"
