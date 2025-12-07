@@ -1,5 +1,5 @@
 use actix_files as acfs;
-use actix_web::{App, HttpResponse, HttpServer, Responder, get, middleware::Logger, post, web::{self, Data, Redirect}};
+use actix_web::{App, HttpResponse, HttpServer, Responder, get, middleware::Logger, post, web::{self, Data}};
 use actix_multipart::{form::{MultipartForm, tempfile::TempFile}};
 use std::{env, path::PathBuf, sync::Mutex, fs};
 use serde::{Deserialize, Serialize};
