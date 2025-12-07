@@ -74,11 +74,12 @@ async fn main() -> std::io::Result<()> {
             .service(greet)
             .service(save_file_server)
             .service(acfs::Files::new("", "./wwwroot")
-                .use_last_modified(true)
-                .use_etag(true)
-                .prefer_utf8(true)
-                .index_file("index.html"))
+            .use_last_modified(true)
+            .use_etag(true)
+            .prefer_utf8(true)
+            .index_file("index.html"))
     })
+    .workers(4)
     .bind(("127.0.0.1", 8080))?
     .run()
     .await

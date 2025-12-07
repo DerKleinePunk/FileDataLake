@@ -23,7 +23,7 @@
             "program": "${workspaceFolder}/src/target/debug/fdl_webserver.exe",
             "args": ["c:/temp/"],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/src/target/",
+            "cwd": "${workspaceFolder}/src/",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "${defaultBuildTask}"
