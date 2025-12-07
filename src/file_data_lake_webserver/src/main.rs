@@ -59,9 +59,12 @@ struct FileCountResponse{
 async fn get_file_cont(info: web::Query<WhereRequest>)-> impl Responder {
     log::debug!("we get info {info:?}");
     let mut response = FileCountResponse{ files: 0};
+
+    if info.field == Some("test".to_string()) {
+        response.files = 1;
+    }
     
-    let json_data = serde_json::to_string(&response).unwrap();
-    HttpResponse::Ok().json(json_data)
+    HttpResponse::Ok().json(response)
 }
 
 struct MyAppData {
