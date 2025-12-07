@@ -8,20 +8,37 @@
 </head>
 <body class="container d-flex justify-content-center align-items-center bg-dark">
     <div id="main-container" class="card">
-    <div class="card-header">
-                <h1 id="Willkommen zum Dateiarchiv"></h1>
-            </div>
-            <div class="card-body">
-                <div id="desciption">
+        <div class="card-header">
+                <h1>Willkommen zum Dateiarchiv</h1>
+        </div>
+        <div class="card-body">
+            <div id="desciption">
                     <p>Willkommen zum Dateiarchiv! Laden Sie Ihre Dateien hoch und verwalten Sie sie sicher in unserem Data Lake.</p>
-                </div>
             </div>
-            <div class="card-footer">
-                <!-- dem Button werden zwei Klassen btn und btn-primary hinzugefügt, im HTML werden diese durch Leerzeichen getrennt-->
-                <button id="upload-button" class="btn btn-primary" onclick="uploadFile()">Datei hochladen..</button>
+        </div>
+        <div class="card-footer">
+            <!-- dem Button werden zwei Klassen btn und btn-primary hinzugefügt, im HTML werden diese durch Leerzeichen getrennt-->
+            <button id="upload-button" class="btn btn-primary" onclick="showUpload()">Hochladen</button>
+        </div>
+    </div>
+    <div id="upload-container" hidden="true" class="card">
+        <div class="card-header">
+                <h2>Datei hochladen</h2>
+        </div>
+        <div class="card-body">
+            <div id="upload-form">
+                <form>
+                    <div class="mb-3">
+                        <label for="formFile" class="form-label">Wählen Sie eine Datei zum Hochladen aus:</label>
+                        <input class="form-control" type="file" id="formFile">
+                    </div>
+                    <button type="button" class="btn btn-success" onclick="uploadFile()">Hochladen</button>
+                </form>
             </div>
+        </div>
     
     </div>
+
 </body>
  <script src="upload.js"></script>
     <!-- Option 1: Bootstrap Bundle with Popper -->
