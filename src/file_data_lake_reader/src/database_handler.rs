@@ -39,12 +39,12 @@ impl LocalDbState {
         Ok(())
     }
 
-    pub fn save_file_info(self, file_entry: &FileEntry) -> Result<()> {
+    /*pub fn save_file_info(self, file_entry: &FileEntry) -> Result<()> {
 
         self.conn.prepare(sql).unwrap();
 
         Ok(())
-    }
+    }*/
 }
 
 struct PreparedStatement<'conn> {

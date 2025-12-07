@@ -200,8 +200,8 @@ fn new_file_hander(path: &PathBuf, shared_data: &AccessSharedData) -> notify::Re
 
     println!("test {file_entry:?}");
 
-    let sd = shared_data.sd.lock().unwrap();
-    sd.db_state.save_file_info(&file_entry).unwrap();
+    //let sd = shared_data.sd.lock().unwrap();
+    //sd.db_state.save_file_info(&file_entry).unwrap();
 
     Ok(())
 }
