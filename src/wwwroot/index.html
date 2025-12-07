@@ -47,15 +47,16 @@
         </div>
         <div class="card-footer">
             <!-- dem Button werden zwei Klassen btn und btn-primary hinzugefügt, im HTML werden diese durch Leerzeichen getrennt-->
-            <button id="upload-button" class="btn btn-primary" onclick="showUpload()">Hochladen</button>
+            <button id="navigation-button" class="btn btn-primary" onclick="showUpload()">Hochladen</button>
+            <button id="analyse-button" class="btn btn-primary" onclick="showAnalyseWahl()">Zu Analyse</button>
         </div>
     </div>
     <div id="upload-container" hidden="true" class="card">
         <div class="card-header">
-                <h2>Datei hochladen</h2>
+            <h2>Datei hochladen</h2>
         </div>
         <div class="card-body">
-            <div id="upload-form">
+            <div id="navigation-form">
                 <form action="/api/file/save" method="post" enctype="multipart/form-data">
                     <div class="mb-3">
                         <label for="formFile" class="form-label">Wählen Sie eine Datei zum Hochladen aus:</label>
@@ -66,15 +67,65 @@
                     <input class="btn btn-success" type="submit">
 
                 </form>
-                
-                    
+
+
             </div>
         </div>
         <div class="card-footer">
             <button id="main-button" class="btn btn-primary" onclick="showMain()">zurück</button>
         </div>
     </div>
+    <div id="analyse-wahl-container" hidden="true" class="card">
+        <div class="card-header">
+            <h2>Analyse auswählen</h2>
+        </div>
+        <div class="card-body">
+            <div id="analyse-options" class="d-grid gap-2 d-md-block">
 
+                
+            </div>
+            <div class="d-grid gap-2" id="analyse-options2">
+                <button class="btn btn-info" onclick="location.href='analyse.html'">Einfache Analyse</button>
+                <button class="btn btn-info" onclick="location.href='advanced_analyse.html'">Erweiterte Analyse</button>
+                <button class="btn btn-primary" type="button" data-bs-toggle="tooltip" data-bs-placement="right" title="Tooltip on right">Button</button>
+                <button class="btn btn-primary" type="button">Button</button>
+                <button class="btn btn-info" onclick="showResult()">Zum Ergebnis</button>
+            </div>
+        </div>
+        <div class="card-footer">
+            <button id="main-button-2" class="btn btn-primary" onclick="showMain()">zurück</button>
+        </div>
+    </div>
+    <!-- Erstelle weiteren Container für eine Ergebnisanzeige in Tabellenform -->
+    <div id="result-container" hidden="true" class="card">
+        <div class="card-header">
+            <h2>Analyseergebnisse</h2>
+        </div>
+        <div class="card-body">
+            <div id="result-table">
+                <table class="table table-bordered">
+                    <thead>
+                        <tr>
+                            <th>Dateiname</th>
+                            <th>Dateigröße (Bytes)</th>
+                            <th>Hochgeladen am</th>
+                            <th>Download</th>
+                        </tr>
+                    </thead>
+                    <tbody id="result-table-body">
+                         <tr>
+                            <td>Beispiel.txt</td>
+                            <td>2048</td>
+                            <td>2024-06-15 10:30:00</td>
+                            <td><a href="/api/file/download/Beispiel.txt" class="btn btn-sm btn-success">Download</a></td>
+                        <!-- Ergebnisse werden hier dynamisch eingefügt -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer">
+            <button id="main-button-3" class="btn btn-primary" onclick="showMain()">zurück</button>
+        </div>
 </body>
 <script src="navigation.js"></script>
 <!-- Option 1: Bootstrap Bundle with Popper -->
