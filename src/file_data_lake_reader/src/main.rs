@@ -4,10 +4,12 @@ use pyo3::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use tokio::runtime;
+use tokio::task;
 use workerpool::Pool;
 use workerpool::thunk::{Thunk, ThunkWorker};
 
@@ -32,7 +34,7 @@ impl ::std::default::Default for AppConfigFile {
             version: 0,
             database: "fdl.db3".into(),
             watch_path: ".".to_string(),
-            python_path: None
+            python_path: None,
         }
     }
 }
@@ -42,7 +44,7 @@ struct AppConfigFile {
     version: u64,
     database: String,
     watch_path: String,
-    python_path: Option<String>
+    python_path: Option<String>,
 }
 
 struct SharedData {
@@ -51,7 +53,9 @@ struct SharedData {
 
 impl SharedData {
     pub fn new(python_path: String) -> SharedData {
-        SharedData { python_path: python_path}
+        SharedData {
+            python_path: python_path,
+        }
     }
 }
 
@@ -119,7 +123,7 @@ async fn main() -> std::io::Result<()> {
 
     confy::store("fdl", "reader", &cfg).unwrap();
 
-    let worker_pool = Pool::<ThunkWorker<()>>::with_name("fileworker".to_string(),n_workers);
+    let worker_pool = Pool::<ThunkWorker<()>>::with_name("fileworker".to_string(), n_workers);
 
     //Starting Python
     Python::initialize();
@@ -139,9 +143,7 @@ async fn main() -> std::io::Result<()> {
 
     let python_path = "".to_string();
 
-    let common_data = SharedData::new(
-        python_path,
-    );
+    let common_data = SharedData::new(python_path);
 
     let shared_data = AccessSharedData {
         sd: Arc::new(Mutex::new(common_data)),
@@ -163,8 +165,11 @@ async fn main() -> std::io::Result<()> {
 
 //https://medium.com/better-programming/easy-multi-threaded-shared-memory-in-rust-57344e9e8b97
 //<P: AsRef<Path>>
-fn new_file_hander(path: &PathBuf, shared_data: &AccessSharedData, pool: deadpool_sqlite::Pool) -> notify::Result<()> {
-
+async fn new_file_hander(
+    path: &PathBuf,
+    shared_data: &AccessSharedData,
+    pool: deadpool_sqlite::Pool,
+) -> notify::Result<()> {
     let python_path = shared_data.python_path();
     log::debug!("using python path {python_path:?}");
 
@@ -179,11 +184,13 @@ fn new_file_hander(path: &PathBuf, shared_data: &AccessSharedData, pool: deadpoo
     match python_result {
         Ok(_) => {
             log::debug!("Python with no error");
-        },
+        }
         Err(error) => {
             log::error!("Python with error {error:?}");
             //Todo exception to text
-            let next_error  = notify::Error::new(notify::ErrorKind::Generic("Python excute Error".to_string()));
+            let next_error = notify::Error::new(notify::ErrorKind::Generic(
+                "Python excute Error".to_string(),
+            ));
             return Err(next_error);
         }
     }
@@ -195,13 +202,21 @@ fn new_file_hander(path: &PathBuf, shared_data: &AccessSharedData, pool: deadpoo
     file_entry.size = file_size;
     file_entry.hash = helper::sha256_digest(path).unwrap();
     for p_attrib in &python_attributes {
-        file_entry.attributes.insert(p_attrib.0.to_string(), p_attrib.1.to_string());
+        file_entry
+            .attributes
+            .insert(p_attrib.0.to_string(), p_attrib.1.to_string());
     }
 
     println!("test {file_entry:?}");
 
-    LocalDbState::save_file_info(pool, &file_entry);
-
+    let result = LocalDbState::save_file_info(pool, &file_entry).await;
+    if result.is_err() {
+        let next_error = notify::Error::new(notify::ErrorKind::Generic(
+            "Python excute Error".to_string(),
+        ));
+        return Err(next_error);
+    }
+    
     Ok(())
 }
 
@@ -210,7 +225,7 @@ fn watch<P: AsRef<Path>>(
     test: Arc<AtomicBool>,
     worker_pool: Pool<ThunkWorker<()>>,
     shared_data: AccessSharedData,
-    dbstate: database_handler::LocalDbState
+    dbstate: database_handler::LocalDbState,
 ) -> notify::Result<()> {
     let (tx, receiver) = std::sync::mpsc::channel();
 
@@ -240,8 +255,15 @@ fn watch<P: AsRef<Path>>(
                         EventKind::Create(CreateKind::Any) => {
                             let shared_data_clone = shared_data.clone();
                             let pool_manager_clone = dbpool.clone();
-                            worker_pool.execute(Thunk::of( move || {
-                                match new_file_hander(&event_ok.paths[0], &shared_data_clone.clone(), pool_manager_clone) {
+                            worker_pool.execute(Thunk::of(move || {
+                                let result = task::block_in_place(move || {
+                                    runtime::Handle::current().block_on(new_file_hander(
+                                        &event_ok.paths[0],
+                                        &shared_data_clone.clone(),
+                                        pool_manager_clone,
+                                    ))
+                                });
+                                match result {
                                     Ok(_) => log::debug!("new file done"),
                                     Err(error) => log::error!("{error:?}"),
                                 }
