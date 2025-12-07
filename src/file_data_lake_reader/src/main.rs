@@ -209,14 +209,20 @@ async fn new_file_hander(
 
     println!("test {file_entry:?}");
 
-    let result = LocalDbState::save_file_info(pool, &file_entry).await;
-    if result.is_err() {
-        let next_error = notify::Error::new(notify::ErrorKind::Generic(
-            "Python excute Error".to_string(),
-        ));
-        return Err(next_error);
+    let result_insert = LocalDbState::save_file_info(pool, file_entry).await;
+    match result_insert {
+        Ok(_) => {
+            log::debug!("database with no error");
+        }
+        Err(error) => {
+            log::error!("database with error {error:?}");
+            let next_error = notify::Error::new(notify::ErrorKind::Generic(
+                "database with error".to_string(),
+            ));
+            return Err(next_error);
+        }
     }
-    
+
     Ok(())
 }
 
