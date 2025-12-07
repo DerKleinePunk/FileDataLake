@@ -1,5 +1,5 @@
-use deadpool_sqlite::{Config, InteractError, Runtime};
-use rusqlite::{Connection, Result, Statement, named_params};
+use deadpool_sqlite::{Config, Runtime};
+use rusqlite::{Result, named_params};
 use std::path::Path;
 
 //tokio = { version = "1.12.0", features = ["rt", "rt-multi-thread", "macros"] }
@@ -61,9 +61,9 @@ impl LocalDbState {
     pub async fn save_file_info(
         conn_pool: deadpool_sqlite::Pool,
         file_entry: FileEntry,
-    ) -> Result<(), rusqlite::Error> {
+    ) -> Result<(), i32> {
         let conn = conn_pool.get().await.unwrap();
-          let sql_result_future = conn.interact(move |conn| {
+        let sql_result = conn.interact(move |conn| {
             let mut statement = conn.prepare("insert into files (id, name_org, hash, size) values (:id, :name, :hash, :size)").unwrap();
             let sql_result = statement.execute(named_params! {
                 ":id": file_entry.id.as_bytes(),
@@ -73,29 +73,25 @@ impl LocalDbState {
             if sql_result.is_err() {
                 let sql_error = sql_result.err().unwrap();
                 log::error!("sql_result {sql_error:?}");
-                return;
+                return -1;
             }
-        }).await;
-        //todo how to get the error
-        Ok(())
-    }
-}
-
-struct PreparedStatement<'conn> {
-    statement: Statement<'conn>,
-}
-
-impl<'conn> PreparedStatement<'conn> {
-    pub fn new<'a>(conn: &'a Connection, sql: &str) -> PreparedStatement<'a> {
-        PreparedStatement {
-            statement: conn.prepare(sql).unwrap(),
+            statement = conn.prepare("insert into file_attributes (id_file, name, value) values (:id, :name, :value)").unwrap();
+            for (name, value ) in file_entry.attributes {
+                let sql_result = statement.execute(named_params! {
+                    ":id": file_entry.id.as_bytes(),
+                    ":name": name,
+                    ":value": value});
+                if sql_result.is_err() {
+                    let sql_error = sql_result.err().unwrap();
+                    log::error!("sql_result {sql_error:?}");
+                    return -1;
+                }
+            }
+            return 0;
+        }).await.unwrap();
+        if sql_result < 0 {
+            return Err(-1);
         }
-    }
-
-    fn query_some_info(&mut self, arg: i64) -> Result<i64, rusqlite::Error> {
-        let mut result_iter = self.statement.query(&[&arg]).unwrap();
-        let result = result_iter.next().unwrap().unwrap().get(0);
-
-        result
+        Ok(())
     }
 }

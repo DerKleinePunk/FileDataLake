@@ -65,8 +65,11 @@ async fn get_file_cont(info: web::Query<WhereRequest>)-> impl Responder {
 
     if info.field == Some("test".to_string()) {
         response.files = 1;
+        if info.field == Some("value".to_string()) {
+            response.files = 2;
+        }
     }
-
+    
     HttpResponse::Ok().json(response)
 }
 

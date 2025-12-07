@@ -19,3 +19,14 @@ if let Err( error  ) =  {
     log::error!("{error:?}");
     return HttpResponse::InternalServerError().body(error.to_string())
 }*/
+
+
+                            worker_pool.execute(Thunk::of(move || {
+                                let result = task::block_in_place(move || {
+                                    runtime::Handle::current().block_on()
+                                });
+                                match result {
+                                    Ok(_) => log::debug!("new file done"),
+                                    Err(error) => log::error!("{error:?}"),
+                                }
+                            }));

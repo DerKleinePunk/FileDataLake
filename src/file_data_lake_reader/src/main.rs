@@ -8,11 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tokio::runtime;
-use tokio::task;
-use workerpool::Pool;
-use workerpool::thunk::{Thunk, ThunkWorker};
-
+use tokio::runtime::{self, Builder};
 use crate::app_dtos::FileEntry;
 use crate::database_handler::LocalDbState;
 
@@ -77,10 +73,10 @@ impl AccessSharedData {
 }
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> Result<(),()> {
     //Todo Put to Config
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
-    let n_workers = 2;
+    let n_workers = 4;
 
     println!("File Reader starting");
 
@@ -97,7 +93,7 @@ async fn main() -> std::io::Result<()> {
         Ok(result) => log::debug!("Config is hier {result:?}"),
         Err(error) => {
             eprintln!("Error: {error:?}");
-            std::process::exit(exitcode::DATAERR);
+            return Err(());
         }
     }
 
@@ -111,10 +107,9 @@ async fn main() -> std::io::Result<()> {
 
         let target_dir_exists = Path::new(file_watch_path).exists();
         if !target_dir_exists {
+            log::error!("Error: dir not exits");
             eprintln!("Error: {}", "dir not exits");
-            //Todo make it better
-            std::process::exit(exitcode::DATAERR);
-            //return Err(());
+            return Err(());
         }
         cfg.watch_path = file_watch_path.to_string();
     } else {
@@ -123,7 +118,10 @@ async fn main() -> std::io::Result<()> {
 
     confy::store("fdl", "reader", &cfg).unwrap();
 
-    let worker_pool = Pool::<ThunkWorker<()>>::with_name("fileworker".to_string(), n_workers);
+    let thread_pool: runtime::Runtime = Builder::new_multi_thread()
+    .worker_threads(n_workers)
+    .thread_keep_alive(Duration::from_secs(30))
+    .build().unwrap();
 
     //Starting Python
     Python::initialize();
@@ -136,8 +134,8 @@ async fn main() -> std::io::Result<()> {
     if result.is_err() {
         let error = result.err();
         log::error!("Error: {error:?}");
-        //Todo make it better
-        std::process::exit(exitcode::DATAERR);
+        eprintln!("Error: {error:?}");
+        return Err(());
     }
     //Todo check DB Version and try Update
 
@@ -154,82 +152,19 @@ async fn main() -> std::io::Result<()> {
     println!("Watching {file_watch_path:?} and pool is running");
     println!("Waiting for Ctrl-C...");
 
-    if let Err(error) = watch(file_watch_path, running, worker_pool, shared_data, dbstate) {
+    if let Err(error) = watch(file_watch_path, running, thread_pool, shared_data, dbstate) {
         log::error!("Error: {error:?}");
     }
 
-    println!("Got it! Exiting...");
+   println!("Got it! Exiting...");
 
-    Ok(())
-}
-
-//https://medium.com/better-programming/easy-multi-threaded-shared-memory-in-rust-57344e9e8b97
-//<P: AsRef<Path>>
-async fn new_file_hander(
-    path: &PathBuf,
-    shared_data: &AccessSharedData,
-    pool: deadpool_sqlite::Pool,
-) -> notify::Result<()> {
-    let python_path = shared_data.python_path();
-    log::debug!("using python path {python_path:?}");
-
-    let file_size = new_file_worker::print_file_size(path)?;
-
-    //Todo move to new file worker or To lib for cli using
-    let app_exe = env::current_exe()?;
-    let app_path = app_exe.parent().unwrap();
-    let pysourcepath = app_path.join("../../python/");
-    let file_name = pysourcepath.join("example.py");
-    let python_result = python_runner::run_python_file(&file_name, path);
-    match python_result {
-        Ok(_) => {
-            log::debug!("Python with no error");
-        }
-        Err(error) => {
-            log::error!("Python with error {error:?}");
-            //Todo exception to text
-            let next_error = notify::Error::new(notify::ErrorKind::Generic(
-                "Python excute Error".to_string(),
-            ));
-            return Err(next_error);
-        }
-    }
-
-    let python_attributes = python_result.unwrap();
-
-    let mut file_entry = FileEntry::new();
-    file_entry.name = path.file_name().unwrap().to_str().unwrap().to_string();
-    file_entry.size = file_size;
-    file_entry.hash = helper::sha256_digest(path).unwrap();
-    for p_attrib in &python_attributes {
-        file_entry
-            .attributes
-            .insert(p_attrib.0.to_string(), p_attrib.1.to_string());
-    }
-
-    println!("test {file_entry:?}");
-
-    let result_insert = LocalDbState::save_file_info(pool, file_entry).await;
-    match result_insert {
-        Ok(_) => {
-            log::debug!("database with no error");
-        }
-        Err(error) => {
-            log::error!("database with error {error:?}");
-            let next_error = notify::Error::new(notify::ErrorKind::Generic(
-                "database with error".to_string(),
-            ));
-            return Err(next_error);
-        }
-    }
-
-    Ok(())
+   Ok(())
 }
 
 fn watch<P: AsRef<Path>>(
     path: P,
     test: Arc<AtomicBool>,
-    worker_pool: Pool<ThunkWorker<()>>,
+    worker_pool: runtime::Runtime,
     shared_data: AccessSharedData,
     dbstate: database_handler::LocalDbState,
 ) -> notify::Result<()> {
@@ -261,19 +196,12 @@ fn watch<P: AsRef<Path>>(
                         EventKind::Create(CreateKind::Any) => {
                             let shared_data_clone = shared_data.clone();
                             let pool_manager_clone = dbpool.clone();
-                            worker_pool.execute(Thunk::of(move || {
-                                let result = task::block_in_place(move || {
-                                    runtime::Handle::current().block_on(new_file_hander(
-                                        &event_ok.paths[0],
-                                        &shared_data_clone.clone(),
+                            worker_pool.spawn(new_file_hander(
+                                        event_ok.paths[0].clone(),
+                                        shared_data_clone.clone(),
                                         pool_manager_clone,
-                                    ))
-                                });
-                                match result {
-                                    Ok(_) => log::debug!("new file done"),
-                                    Err(error) => log::error!("{error:?}"),
-                                }
-                            }));
+                                    ));
+
                         }
                         _other => {
                             log::debug!("Event not handeled");
@@ -295,6 +223,69 @@ fn watch<P: AsRef<Path>>(
             Err(error) => log::error!("Error: {error:?}"),
         }
     }*/
+
+    Ok(())
+}
+
+//https://medium.com/better-programming/easy-multi-threaded-shared-memory-in-rust-57344e9e8b97
+//<P: AsRef<Path>>
+async fn new_file_hander(
+    path: PathBuf,
+    shared_data: AccessSharedData,
+    pool: deadpool_sqlite::Pool,
+) -> notify::Result<()> {
+    let python_path = shared_data.python_path();
+    log::debug!("using python path {python_path:?}");
+
+    let file_size = new_file_worker::print_file_size(&path)?;
+
+    //Todo move to new file worker or To lib for cli using
+    let app_exe = env::current_exe()?;
+    let app_path = app_exe.parent().unwrap();
+    let pysourcepath = app_path.join("../../python/");
+    let file_name = pysourcepath.join("example.py");
+    let python_result = python_runner::run_python_file(&file_name, &path);
+    match python_result {
+        Ok(_) => {
+            log::debug!("Python with no error");
+        }
+        Err(error) => {
+            log::error!("Python with error {error:?}");
+            //Todo exception to text
+            let next_error = notify::Error::new(notify::ErrorKind::Generic(
+                "Python excute Error".to_string(),
+            ));
+            return Err(next_error);
+        }
+    }
+
+    let python_attributes = python_result.unwrap();
+
+    let mut file_entry = FileEntry::new();
+    file_entry.name = path.file_name().unwrap().to_str().unwrap().to_string();
+    file_entry.size = file_size;
+    file_entry.hash = helper::sha256_digest(&path).unwrap();
+    for p_attrib in &python_attributes {
+        file_entry
+            .attributes
+            .insert(p_attrib.0.to_string(), p_attrib.1.to_string());
+    }
+
+    println!("test {file_entry:?}");
+
+    let result_insert = LocalDbState::save_file_info(pool, file_entry).await;
+    match result_insert {
+        Ok(_) => {
+            log::debug!("database with no error");
+        }
+        Err(error) => {
+            log::error!("database with error {error:?}");
+            let next_error = notify::Error::new(notify::ErrorKind::Generic(
+                "database with error".to_string(),
+            ));
+            return Err(next_error);
+        }
+    }
 
     Ok(())
 }
