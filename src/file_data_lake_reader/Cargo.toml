@@ -17,6 +17,7 @@ notify = "8.1.0"
 pyo3 = "0.27.2"
 serde = "1.0.228"
 serde_derive = "1.0.228"
+sha2 = "0.10.9"
 workerpool = "1.2.1"
 
 [dependencies.rusqlite]
