@@ -19,6 +19,27 @@
                     <p>The little Punk und Plikoener haben ein Datenspeicher mit per PhytonScript konfiguierbaren Filtern in der Programmsprache Rust erstellt. Das Frontend wurde mit Bootstrap realisiert.</p>
                     <p>Es lassen sich bis zum 10 MB Große Dokumente hochladen. </p>
             </div>
+            <div id="filecount">
+                <table class="table table-bordered">
+                    <tr>
+                        <td><strong>Derzeit gespeicherte Dateien:</strong></td>
+                        <td id="file-count-cell"></td>
+                        <script>
+                            let countURI = '/api/file/count';
+                            let countFakeURI = 'fakefilecount.html';
+                            fetch(countURI)
+                                .then(response => response.json())
+                                .then(data => {
+                                    document.getElementById('file-count-cell').innerText = data.count;
+                                })
+                                .catch(error => {
+                                    console.error('Fehler beim Abrufen der Dateianzahl:', error);
+                                    document.getElementById('file-count-cell').innerText = 'Nicht verfügbar';
+                                });
+                        </script>
+                    </tr>
+                </table>
+            </div>
         </div>
         <div class="card-footer">
             <!-- dem Button werden zwei Klassen btn und btn-primary hinzugefügt, im HTML werden diese durch Leerzeichen getrennt-->
