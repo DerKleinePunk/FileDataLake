@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -31,6 +31,7 @@ impl ::std::default::Default for AppConfigFile {
             version: 0,
             database: "fdl.db3".into(),
             watch_path: ".".to_string(),
+            python_path: None
         }
     }
 }
@@ -40,6 +41,35 @@ struct AppConfigFile {
     version: u64,
     database: String,
     watch_path: String,
+    python_path: Option<String>
+}
+
+struct SharedData {
+    python_path: String,
+    db_state: database_handler::LocalDbState,
+}
+
+impl SharedData {
+    pub fn new(python_path: String, db_state: database_handler::LocalDbState) -> SharedData {
+        SharedData { python_path: python_path, db_state: db_state}
+    }
+}
+
+struct AccessSharedData {
+    pub sd: Arc<Mutex<SharedData>>,
+}
+
+impl AccessSharedData {
+    fn clone(&self) -> Self {
+        AccessSharedData {
+            sd: Arc::clone(&self.sd),
+        }
+    }
+
+    pub fn python_path(&self) -> String {
+        let lock = self.sd.lock().unwrap();
+        lock.python_path.clone()
+    }
 }
 
 fn main() -> std::io::Result<()> {
@@ -93,11 +123,6 @@ fn main() -> std::io::Result<()> {
     //Starting Python
     Python::initialize();
 
-    println!(
-        "Watching {} and pool is running",
-        Path::new(file_watch_path).display()
-    );
-
     log::debug!("Starting Database");
 
     let dbfile: &Path = cfg.database.as_ref();
@@ -111,11 +136,23 @@ fn main() -> std::io::Result<()> {
     }
     //Todo check DB Version and try Update
 
+    let python_path = "".to_string();
+
+    let common_data = SharedData::new(
+        python_path,
+        dbstate,
+    );
+
+    let shared_data = AccessSharedData {
+        sd: Arc::new(Mutex::new(common_data)),
+    };
+
     log::debug!("we watch at {file_watch_path:?}");
 
+    println!("Watching {file_watch_path:?} and pool is running");
     println!("Waiting for Ctrl-C...");
 
-    if let Err(error) = watch(file_watch_path, running, worker_pool) {
+    if let Err(error) = watch(file_watch_path, running, worker_pool, shared_data) {
         log::error!("Error: {error:?}");
     }
 
@@ -126,10 +163,14 @@ fn main() -> std::io::Result<()> {
 
 //https://medium.com/better-programming/easy-multi-threaded-shared-memory-in-rust-57344e9e8b97
 //<P: AsRef<Path>>
-fn new_file_hander(path: &PathBuf) -> notify::Result<()> {
+fn new_file_hander(path: &PathBuf, shared_data: &AccessSharedData) -> notify::Result<()> {
+
+    let python_path = shared_data.python_path();
+    log::debug!("using python path {python_path:?}");
+
     let file_size = new_file_worker::print_file_size(path)?;
 
-    //Tdod move to new file worker or To lib for cli using
+    //Todo move to new file worker or To lib for cli using
     let app_exe = env::current_exe()?;
     let app_path = app_exe.parent().unwrap();
     let pysourcepath = app_path.join("../../python/");
@@ -159,6 +200,9 @@ fn new_file_hander(path: &PathBuf) -> notify::Result<()> {
 
     println!("test {file_entry:?}");
 
+    let sd = shared_data.sd.lock().unwrap();
+    sd.db_state.save_file_info(&file_entry).unwrap();
+
     Ok(())
 }
 
@@ -166,6 +210,7 @@ fn watch<P: AsRef<Path>>(
     path: P,
     test: Arc<AtomicBool>,
     worker_pool: Pool<ThunkWorker<()>>,
+    shared_data: AccessSharedData,
 ) -> notify::Result<()> {
     let (tx, receiver) = std::sync::mpsc::channel();
 
@@ -177,6 +222,7 @@ fn watch<P: AsRef<Path>>(
     // Add a path to be watched. All files and directories at that path and
     // below will be monitored for changes.
     watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
+
 
     while test.load(Ordering::SeqCst) {
         thread::sleep(Duration::from_millis(500));
@@ -192,8 +238,9 @@ fn watch<P: AsRef<Path>>(
                     //todo start Work
                     match event_ok.kind {
                         EventKind::Create(CreateKind::Any) => {
-                            worker_pool.execute(Thunk::of(move || {
-                                match new_file_hander(&event_ok.paths[0]) {
+                            let shared_data_clone = shared_data.clone();
+                            worker_pool.execute(Thunk::of( move || {
+                                match new_file_hander(&event_ok.paths[0], &shared_data_clone) {
                                     Ok(_) => log::debug!("new file done"),
                                     Err(error) => log::error!("{error:?}"),
                                 }

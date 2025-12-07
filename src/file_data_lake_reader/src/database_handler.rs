@@ -1,21 +1,22 @@
 use std::path::Path;
-
 use rusqlite::{Connection, Statement, Result};
+
+use crate::app_dtos::FileEntry;
 
 #[derive(Debug)]
 pub struct LocalDbState {
-    db: Connection,
+    conn: Connection,
     checked: bool
 }
 
 impl LocalDbState {
     pub fn new(file_name: &Path) -> LocalDbState {
-        let db = Connection::open(file_name).unwrap();
-        LocalDbState { db: db, checked: false}
+        let conn = Connection::open(file_name).unwrap();
+        LocalDbState { conn: conn, checked: false}
     }
 
     pub fn create_database(dbstate : &mut LocalDbState) -> Result<()> {
-         dbstate.db.execute(
+         dbstate.conn.execute(
             "create table if not exists files (
                 id BLOB PRIMARY KEY,
                 name_org text not null,
@@ -24,7 +25,7 @@ impl LocalDbState {
             )",
             (),
         )?;
-        dbstate.db.execute(
+        dbstate.conn.execute(
             "create table if not exists file_attributes (
                 id_file BLOB not null references files(id),
                 name text not null,
@@ -34,6 +35,13 @@ impl LocalDbState {
             (),
         )?;
         dbstate.checked = true;
+
+        Ok(())
+    }
+
+    pub fn save_file_info(self, file_entry: &FileEntry) -> Result<()> {
+
+        self.conn.prepare(sql).unwrap();
 
         Ok(())
     }
