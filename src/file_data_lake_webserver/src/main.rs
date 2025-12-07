@@ -13,7 +13,7 @@ async fn greet(name: web::Path<String>) -> impl Responder {
     format!("Hello {}!", name)
 }
 
-#[derive(Debug, MultipartForm)]8
+#[derive(Debug, MultipartForm)]
 pub struct Upload {
     #[multipart(rename = "file")]
     files: Vec<TempFile>,
@@ -46,6 +46,8 @@ async fn save_file_server(
 struct MyAppData {
     upload_path: String,
 }
+
+//https://github.com/deadpool-rs/deadpool/blob/main/examples/redis-actix-web/src/main.rs
 
 #[actix_web::main] // or #[tokio::main]
 async fn main() -> std::io::Result<()> {

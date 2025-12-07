@@ -12,6 +12,7 @@ use workerpool::Pool;
 use workerpool::thunk::{Thunk, ThunkWorker};
 
 use crate::app_dtos::FileEntry;
+use crate::database_handler::LocalDbState;
 
 //Hints
 //https://docs.rs/workerpool/latest/workerpool/
@@ -46,12 +47,11 @@ struct AppConfigFile {
 
 struct SharedData {
     python_path: String,
-    db_state: database_handler::LocalDbState,
 }
 
 impl SharedData {
-    pub fn new(python_path: String, db_state: database_handler::LocalDbState) -> SharedData {
-        SharedData { python_path: python_path, db_state: db_state}
+    pub fn new(python_path: String) -> SharedData {
+        SharedData { python_path: python_path}
     }
 }
 
@@ -72,7 +72,8 @@ impl AccessSharedData {
     }
 }
 
-fn main() -> std::io::Result<()> {
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
     //Todo Put to Config
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     let n_workers = 2;
@@ -127,7 +128,7 @@ fn main() -> std::io::Result<()> {
 
     let dbfile: &Path = cfg.database.as_ref();
     let mut dbstate = database_handler::LocalDbState::new(&dbfile);
-    let result = database_handler::LocalDbState::create_database(&mut dbstate);
+    let result = database_handler::LocalDbState::create_database(&mut dbstate).await;
     if result.is_err() {
         let error = result.err();
         log::error!("Error: {error:?}");
@@ -140,7 +141,6 @@ fn main() -> std::io::Result<()> {
 
     let common_data = SharedData::new(
         python_path,
-        dbstate,
     );
 
     let shared_data = AccessSharedData {
@@ -152,7 +152,7 @@ fn main() -> std::io::Result<()> {
     println!("Watching {file_watch_path:?} and pool is running");
     println!("Waiting for Ctrl-C...");
 
-    if let Err(error) = watch(file_watch_path, running, worker_pool, shared_data) {
+    if let Err(error) = watch(file_watch_path, running, worker_pool, shared_data, dbstate) {
         log::error!("Error: {error:?}");
     }
 
@@ -163,7 +163,7 @@ fn main() -> std::io::Result<()> {
 
 //https://medium.com/better-programming/easy-multi-threaded-shared-memory-in-rust-57344e9e8b97
 //<P: AsRef<Path>>
-fn new_file_hander(path: &PathBuf, shared_data: &AccessSharedData) -> notify::Result<()> {
+fn new_file_hander(path: &PathBuf, shared_data: &AccessSharedData, pool: deadpool_sqlite::Pool) -> notify::Result<()> {
 
     let python_path = shared_data.python_path();
     log::debug!("using python path {python_path:?}");
@@ -200,8 +200,7 @@ fn new_file_hander(path: &PathBuf, shared_data: &AccessSharedData) -> notify::Re
 
     println!("test {file_entry:?}");
 
-    //let sd = shared_data.sd.lock().unwrap();
-    //sd.db_state.save_file_info(&file_entry).unwrap();
+    LocalDbState::save_file_info(pool, &file_entry);
 
     Ok(())
 }
@@ -211,6 +210,7 @@ fn watch<P: AsRef<Path>>(
     test: Arc<AtomicBool>,
     worker_pool: Pool<ThunkWorker<()>>,
     shared_data: AccessSharedData,
+    dbstate: database_handler::LocalDbState
 ) -> notify::Result<()> {
     let (tx, receiver) = std::sync::mpsc::channel();
 
@@ -223,7 +223,7 @@ fn watch<P: AsRef<Path>>(
     // below will be monitored for changes.
     watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
 
-
+    let dbpool = dbstate.get();
     while test.load(Ordering::SeqCst) {
         thread::sleep(Duration::from_millis(500));
         let mut iter = receiver.try_iter();
@@ -239,8 +239,9 @@ fn watch<P: AsRef<Path>>(
                     match event_ok.kind {
                         EventKind::Create(CreateKind::Any) => {
                             let shared_data_clone = shared_data.clone();
+                            let pool_manager_clone = dbpool.clone();
                             worker_pool.execute(Thunk::of( move || {
-                                match new_file_hander(&event_ok.paths[0], &shared_data_clone) {
+                                match new_file_hander(&event_ok.paths[0], &shared_data_clone.clone(), pool_manager_clone) {
                                     Ok(_) => log::debug!("new file done"),
                                     Err(error) => log::error!("{error:?}"),
                                 }
