@@ -2,6 +2,7 @@ use actix_files as acfs;
 use actix_web::{App, HttpResponse, HttpServer, Responder, get, middleware::Logger, post, web::{self, Data}};
 use actix_multipart::{form::{MultipartForm, tempfile::TempFile}};
 use std::{env, path::PathBuf, sync::Mutex, fs};
+use serde::{Deserialize, Serialize};
 
 //mod files;
 
@@ -43,6 +44,26 @@ async fn save_file_server(
     HttpResponse::Ok().finish()
 }
 
+#[derive(Debug, Deserialize)]
+struct WhereRequest {
+   field: Option<String>,
+   value: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct FileCountResponse{
+   files: u64,
+}
+
+#[get("/api/file/count")]
+async fn get_file_cont(info: web::Query<WhereRequest>)-> impl Responder {
+    log::debug!("we get info {info:?}");
+    let mut response = FileCountResponse{ files: 0};
+    
+    let json_data = serde_json::to_string(&response).unwrap();
+    HttpResponse::Ok().json(json_data)
+}
+
 struct MyAppData {
     upload_path: String,
 }
@@ -61,10 +82,11 @@ async fn main() -> std::io::Result<()> {
 
     let upload_dir = PathBuf::from(my_app_data.upload_path);
     my_app_data.upload_path = fs::canonicalize(&upload_dir)?.to_string_lossy().to_string();
-
+    let up_load_path = my_app_data.upload_path.to_string();
     let data = Data::new(Mutex::new(my_app_data));
 
     println!("starting web server on 127.0.0.1:8080");
+    println!("Upload file are {up_load_path:?}");
 
     HttpServer::new(move || {
         App::new()
@@ -73,6 +95,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(Data::clone(&data))
             .service(greet)
             .service(save_file_server)
+            .service(get_file_cont)
             .service(acfs::Files::new("", "./wwwroot")
             .use_last_modified(true)
             .use_etag(true)

@@ -787,6 +787,8 @@ dependencies = [
  "futures",
  "log",
  "sanitize-filename",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
