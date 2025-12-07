@@ -1,5 +1,5 @@
 use actix_files as acfs;
-use actix_web::{App, HttpResponse, HttpServer, Responder, get, middleware::Logger, post, web::{self, Data}};
+use actix_web::{App, HttpResponse, HttpServer, Responder, get, middleware::Logger, post, web::{self, Data, Redirect}};
 use actix_multipart::{form::{MultipartForm, tempfile::TempFile}};
 use std::{env, path::PathBuf, sync::Mutex, fs};
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,10 @@ async fn save_file_server(
             }
         }
     }
-    HttpResponse::Ok().finish()
+
+    return HttpResponse::SeeOther()
+        .insert_header(("Location", "/"))
+        .finish();
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,7 +66,7 @@ async fn get_file_cont(info: web::Query<WhereRequest>)-> impl Responder {
     if info.field == Some("test".to_string()) {
         response.files = 1;
     }
-    
+
     HttpResponse::Ok().json(response)
 }
 
