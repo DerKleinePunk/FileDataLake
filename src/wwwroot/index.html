@@ -47,7 +47,7 @@
         </div>
         <div class="card-footer">
             <!-- dem Button werden zwei Klassen btn und btn-primary hinzugefügt, im HTML werden diese durch Leerzeichen getrennt-->
-            <button id="navigation-button" class="btn btn-primary" onclick="showUpload()">Hochladen</button>
+            <button id="upload-button" class="btn btn-primary" onclick="showUpload()">Hochladen</button>
             <button id="analyse-button" class="btn btn-primary" onclick="showAnalyseWahl()">Zu Analyse</button>
         </div>
     </div>
@@ -56,7 +56,7 @@
             <h2>Datei hochladen</h2>
         </div>
         <div class="card-body">
-            <div id="navigation-form">
+            <div id="upload-form">
                 <form action="/api/file/save" method="post" enctype="multipart/form-data">
                     <div class="mb-3">
                         <label for="formFile" class="form-label">Wählen Sie eine Datei zum Hochladen aus:</label>
