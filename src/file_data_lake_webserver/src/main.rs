@@ -1,13 +1,20 @@
 use actix_files as acfs;
-use actix_web::{App, HttpResponse, HttpServer, Responder, get, middleware::Logger, post, web::{self, Data}};
-use actix_multipart::{form::{MultipartForm, tempfile::TempFile}};
-use std::{env, path::PathBuf, sync::Mutex, fs};
+use actix_multipart::form::{MultipartForm, tempfile::TempFile};
+use actix_web::{
+    App, HttpResponse, HttpServer, Responder, get,
+    middleware::Logger,
+    post,
+    web::{self, Data},
+};
+use deadpool_sqlite::{Config, Pool, PoolError, Runtime, rusqlite::{Row, params}};
 use serde::{Deserialize, Serialize};
+use std::{env, fs, path::PathBuf};
 
 //mod files;
 
 //https://github.com/actix/examples
 //https://github.com/actix/examples/blob/master/databases/sqlite/src/main.rs
+//https://docs.rs/rusqlite/latest/rusqlite/struct.Statement.html
 
 #[get("/api/hello/{name}")]
 async fn greet(name: web::Path<String>) -> impl Responder {
@@ -22,22 +29,22 @@ pub struct Upload {
 
 #[post("/api/file/save")]
 async fn save_file_server(
-    data: Data<Mutex<MyAppData>>,
-     MultipartForm(form): MultipartForm<Upload>
+    data: web::Data<MyAppData>,
+    MultipartForm(form): MultipartForm<Upload>,
 ) -> impl Responder {
-
-     let app_data = data.lock().unwrap();
 
     for f in form.files {
         let temp_file_path = f.file.path();
-        let mut file_path = PathBuf::from(&app_data.upload_path);
+        let mut file_path = PathBuf::from(&data.upload_path);
         file_path = file_path.join(f.file_name.unwrap());
         log::debug!("copy file from {temp_file_path:?} to {file_path:?}");
         match std::fs::copy(temp_file_path, file_path) {
-            Ok(_) => {log::debug!("done")}
-            Err(error) =>{
+            Ok(_) => {
+                log::debug!("done")
+            }
+            Err(error) => {
                 log::error!("{error:?}");
-                return HttpResponse::InternalServerError().body(error.to_string())
+                return HttpResponse::InternalServerError().body(error.to_string());
             }
         }
     }
@@ -49,32 +56,62 @@ async fn save_file_server(
 
 #[derive(Debug, Deserialize)]
 struct WhereRequest {
-   field: Option<String>,
-   value: Option<String>,
+    field: Option<String>,
+    value: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-struct FileCountResponse{
-   files: u64,
+struct FileCountResponse {
+    files: u64,
+}
+
+fn get_result(row: &Row) -> Result<u64, deadpool_sqlite::rusqlite::Error> {
+    return row.get(0);
+}
+
+async fn file_count(pool: &Pool, where_request: &WhereRequest) -> Result<FileCountResponse, PoolError> {
+
+    log::debug!("we get info {where_request:?}");
+
+    let conn = pool.get().await.unwrap();
+    let sql_result = conn.interact(|conn| {
+        let result = conn.query_one("select count(*) from files", params![], get_result );
+        if result.is_err() {
+            let sql_error = result.err().unwrap();
+            log::error!("{sql_error:?}");
+            return 0;
+        }
+        return result.unwrap()
+    }).await.unwrap();
+
+    let response = FileCountResponse { files : sql_result};
+    Ok(response)
 }
 
 #[get("/api/file/count")]
-async fn get_file_cont(info: web::Query<WhereRequest>)-> impl Responder {
+async fn get_file_cont(
+    data: web::Data<MyAppData>,
+    info: web::Query<WhereRequest>,
+) -> impl Responder {
     log::debug!("we get info {info:?}");
-    let mut response = FileCountResponse{ files: 0};
+
+    let response = file_count(&data.conn_pool, &info).await.unwrap();
+
+    /*let mut response = FileCountResponse { files: 0 };
 
     if info.field == Some("test".to_string()) {
         response.files = 1;
-        if info.field == Some("value".to_string()) {
+        if info.value == Some("value".to_string()) {
             response.files = 2;
         }
-    }
-    
+    }*/
+
     HttpResponse::Ok().json(response)
 }
 
 struct MyAppData {
     upload_path: String,
+    conn_pool: deadpool_sqlite::Pool,
 }
 
 //https://github.com/deadpool-rs/deadpool/blob/main/examples/redis-actix-web/src/main.rs
@@ -84,15 +121,21 @@ async fn main() -> std::io::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
 
     //Todo add to config file
-    let mut my_app_data = MyAppData { upload_path: "./upload".to_string() };
+    let cfg = Config::new("./target/fdl.db3");
+    let mut my_app_data = MyAppData {
+        upload_path: "./upload".to_string(),
+        conn_pool: cfg.create_pool(Runtime::Tokio1).unwrap(),
+    };
 
     let path = env::current_dir()?;
     println!("The current directory is {}", path.display());
 
     let upload_dir = PathBuf::from(my_app_data.upload_path);
+
     my_app_data.upload_path = fs::canonicalize(&upload_dir)?.to_string_lossy().to_string();
+
     let up_load_path = my_app_data.upload_path.to_string();
-    let data = Data::new(Mutex::new(my_app_data));
+    let data = Data::new(my_app_data);
 
     println!("starting web server on 127.0.0.1:8080");
     println!("Upload file are {up_load_path:?}");
@@ -105,11 +148,13 @@ async fn main() -> std::io::Result<()> {
             .service(greet)
             .service(save_file_server)
             .service(get_file_cont)
-            .service(acfs::Files::new("", "./wwwroot")
-            .use_last_modified(true)
-            .use_etag(true)
-            .prefer_utf8(true)
-            .index_file("index.html"))
+            .service(
+                acfs::Files::new("", "./wwwroot")
+                    .use_last_modified(true)
+                    .use_etag(true)
+                    .prefer_utf8(true)
+                    .index_file("index.html"),
+            )
     })
     .workers(4)
     .bind(("127.0.0.1", 8080))?

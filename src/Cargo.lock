@@ -782,6 +782,7 @@ dependencies = [
  "actix-files",
  "actix-multipart",
  "actix-web",
+ "deadpool-sqlite",
  "env_logger",
  "futures",
  "log",
