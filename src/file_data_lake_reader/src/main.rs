@@ -97,7 +97,6 @@ async fn main() -> Result<(),()> {
         }
     }
 
-    //Todo How Update Config ?
     let mut cfg: AppConfigFile = confy::load("fdl", "reader").unwrap();
 
     let file_watch_path: &str;
@@ -116,6 +115,7 @@ async fn main() -> Result<(),()> {
         file_watch_path = cfg.watch_path.as_str();
     }
 
+    //Save so User see the new Defaults
     confy::store("fdl", "reader", &cfg).unwrap();
 
     let thread_pool: runtime::Runtime = Builder::new_multi_thread()

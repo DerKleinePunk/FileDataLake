@@ -3,6 +3,28 @@
 Bringe Ordnung in deine Datei ablagen und mach das wieder finden leichter.
 Ein Ort wo alles ist und mehr Attribute zum wieder finden. Erstelle mit Plugins eigene Attribute für deine Dateiablage.
 
+Wir Testen so weit möglich immer Windows (11) und Debian/Ubuntu
+
+## Build
+
+cargo build --manifest-path ./src/Cargo.toml
+
+fdl_reader(.exe) -> über wacher des Verzeichnisses
+fdl_webserver(.exe) Web UI mit Upload Möglichkeit
+
+config Windows
+C:\Users\{user}\AppData\Roaming\fdl\config
+
+config Linux
+???
+
+## Config
+
+## Docker
+
+## Logging
+
+[env_logger](https://github.com/rust-cli/env_logger)
 
 ## Links
 
