@@ -239,6 +239,18 @@ async fn new_file_hander(
 
     let file_size = new_file_worker::print_file_size(&path)?;
 
+    //Todo https://docs.rs/image/latest/image/index.html
+    //pub fn thumbnail_exact(&self, nwidth: u32, nheight: u32) -> DynamicImage
+
+
+    //ittle_exif
+    /*// Read in the metadata again & print it
+	println!("\nPNG read result:");
+	for tag in &Metadata::new_from_path(png_path).unwrap()
+	{
+		println!("{:?}", tag);
+	} */
+
     //Todo move to new file worker or To lib for cli using
     let app_exe = env::current_exe()?;
     let app_path = app_exe.parent().unwrap();
