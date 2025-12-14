@@ -18,6 +18,7 @@ C:\Users\{user}\AppData\Roaming\fdl\config
 config Linux
 ???
 
+
 ## Config
 
 ## Docker
@@ -25,6 +26,14 @@ config Linux
 ## Logging
 
 [env_logger](https://github.com/rust-cli/env_logger)
+
+## Python Addons
+
+def example2(*args, **kwargs) -> dict:
+    <" Your Code">
+    newdict = {"testnew":"value1"}
+    return newdict1
+
 
 ## Links
 

@@ -6,17 +6,17 @@ use std::fs;
 // Todo see this make Python saver...
 //https://users.rust-lang.org/t/ipc-communication-shared-memory-unix-sockets-and-separate-process/106382
 
-pub fn run_python_file(source_file_name: &Path, analyse_file: &PathBuf) -> PyResult<HashMap<String, String>> {
+pub fn run_python_file(source_file_name: &Path, analyse_file: &PathBuf, function_name: &String) -> PyResult<HashMap<String, String>> {
 
     log::debug!("python file: {source_file_name:?}");
     let file_text = fs::read_to_string(source_file_name)?;
     let py_app_text = CString::new(file_text).unwrap();
-    let python_result = run_python_code(&py_app_text, analyse_file);
+    let python_result = run_python_code(&py_app_text, analyse_file, function_name);
 
     return  python_result;
 }
 
-fn run_python_code(py_app_text: &CString, analyse_file: &PathBuf) -> PyResult<HashMap<String, String>> {
+fn run_python_code(py_app_text: &CString, analyse_file: &PathBuf, function_name: &String) -> PyResult<HashMap<String, String>> {
     /*let sys = py.import("sys")?;
     let version: String = sys.get(py, "version")?.extract(py)?;
 
@@ -42,7 +42,7 @@ fn run_python_code(py_app_text: &CString, analyse_file: &PathBuf) -> PyResult<Ha
             c"example.py",
             c"",
         )?
-        .getattr("example")?
+        .getattr(function_name)?
         .into();
 
         // call object with PyDict

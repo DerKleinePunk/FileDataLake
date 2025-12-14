@@ -1,3 +1,6 @@
+use crate::app_dtos::FileEntry;
+use crate::database_handler::LocalDbState;
+use crate::helper::string_ify_ioerror;
 use notify::event::CreateKind;
 use notify::{Config, EventKind, RecursiveMode, Watcher};
 use pyo3::prelude::*;
@@ -10,9 +13,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tokio::runtime::{self, Builder};
-use crate::app_dtos::FileEntry;
-use crate::database_handler::LocalDbState;
-use crate::helper::string_ify_ioerror;
 
 //Hints
 //https://docs.rs/workerpool/latest/workerpool/
@@ -22,9 +22,9 @@ use crate::helper::string_ify_ioerror;
 mod app_dtos;
 mod database_handler;
 mod helper;
+mod image_handler;
 mod new_file_worker;
 mod python_runner;
-mod image_handler;
 
 /// `AppConfigFile` implements `Default`
 impl ::std::default::Default for AppConfigFile {
@@ -34,9 +34,24 @@ impl ::std::default::Default for AppConfigFile {
             database: "fdl.db3".into(),
             watch_path: ".".to_string(),
             python_path: None,
-            thumbnail_path: None
+            thumbnail_path: None,
+            file_actions: None,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+enum ActionType {
+    Python,
+    Rust,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+struct FileAction {
+    extention: String,
+    action_type: ActionType,
+    file_name: String,
+    function_name: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -46,18 +61,25 @@ struct AppConfigFile {
     watch_path: String,
     python_path: Option<String>,
     thumbnail_path: Option<String>,
+    file_actions: Option<Vec<FileAction>>,
 }
 
 struct SharedData {
     python_path: String,
-    thumbnail_path: String
+    thumbnail_path: String,
+    file_actions: Vec<FileAction>,
 }
 
 impl SharedData {
-    pub fn new(python_path: &String, thumbnail_path: &String) -> SharedData {
+    pub fn new(
+        python_path: &String,
+        thumbnail_path: &String,
+        file_actions: &Vec<FileAction>,
+    ) -> SharedData {
         SharedData {
             python_path: python_path.clone(),
-            thumbnail_path: thumbnail_path.clone()
+            thumbnail_path: thumbnail_path.clone(),
+            file_actions: file_actions.clone(),
         }
     }
 }
@@ -82,10 +104,15 @@ impl AccessSharedData {
         let lock = self.sd.lock().unwrap();
         lock.thumbnail_path.clone()
     }
+
+    pub fn file_actions(&self) -> Vec<FileAction> {
+        let lock = self.sd.lock().unwrap();
+        lock.file_actions.clone()
+    }
 }
 
 #[tokio::main]
-async fn main() -> Result<(),()> {
+async fn main() -> Result<(), ()> {
     //Todo Put to Config
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     let n_workers = 4;
@@ -127,24 +154,72 @@ async fn main() -> Result<(),()> {
         file_watch_path = cfg.watch_path.as_str();
     }
 
-    let python_path = "".to_string();
-    let thumbnail_path = "".to_string();
+    let app_exe = env::current_exe().unwrap();
+    let app_path = app_exe.parent().unwrap();
+
+    let mut python_path = app_path.join("python").to_str().unwrap().to_string();
+    let mut thumbnail_path = app_path.join("thumbnail").to_str().unwrap().to_string();
 
     if cfg.python_path == None {
         cfg.python_path = Some(python_path.clone());
+    } else {
+        python_path = cfg.python_path.clone().unwrap();
     }
 
     if cfg.thumbnail_path == None {
         cfg.thumbnail_path = Some(thumbnail_path.clone());
+    } else {
+        thumbnail_path = cfg.thumbnail_path.clone().unwrap();
+    }
+
+    let mut target_dir_exists = Path::new(&python_path).exists();
+
+    if !target_dir_exists {
+        log::error!("{} not exits", python_path);
+        eprintln!("{} not exits", python_path);
+        return Err(());
+    }
+
+    target_dir_exists = Path::new(&thumbnail_path).exists();
+
+    if !target_dir_exists {
+        log::error!("{} not exits", thumbnail_path);
+        eprintln!("{} not exits", thumbnail_path);
+        return Err(());
+    }
+
+    let mut file_actions: Vec<FileAction> = Vec::new();
+    let entry1 = FileAction {
+        extention: "jpg".to_string(),
+        action_type: ActionType::Python,
+        file_name: "example.py".to_string(),
+        function_name: "example".to_string(),
+    };
+
+    let entry2 = FileAction {
+        extention: "jpg".to_string(),
+        action_type: ActionType::Python,
+        file_name: "example.py".to_string(),
+        function_name: "example2".to_string(),
+    };
+
+    file_actions.push(entry1);
+    file_actions.push(entry2);
+
+    if cfg.file_actions == None {
+        cfg.file_actions = Some(file_actions.clone());
+    } else {
+        file_actions = cfg.file_actions.clone().unwrap();
     }
 
     //Save so User see the new Defaults
     confy::store("fdl", "reader", &cfg).unwrap();
 
     let thread_pool: runtime::Runtime = Builder::new_multi_thread()
-    .worker_threads(n_workers)
-    .thread_keep_alive(Duration::from_secs(30))
-    .build().unwrap();
+        .worker_threads(n_workers)
+        .thread_keep_alive(Duration::from_secs(30))
+        .build()
+        .unwrap();
 
     //Starting Python
     Python::initialize();
@@ -162,9 +237,7 @@ async fn main() -> Result<(),()> {
     }
     //Todo check DB Version and try Update
 
-
-
-    let common_data = SharedData::new(&python_path, &thumbnail_path);
+    let common_data = SharedData::new(&python_path, &thumbnail_path, &file_actions);
 
     let shared_data = AccessSharedData {
         sd: Arc::new(Mutex::new(common_data)),
@@ -179,9 +252,9 @@ async fn main() -> Result<(),()> {
         log::error!("Error: {error:?}");
     }
 
-   println!("Got it! Exiting...");
+    println!("Got it! Exiting...");
 
-   Ok(())
+    Ok(())
 }
 
 fn watch<P: AsRef<Path>>(
@@ -220,10 +293,10 @@ fn watch<P: AsRef<Path>>(
                             let shared_data_clone = shared_data.clone();
                             let pool_manager_clone = dbpool.clone();
                             worker_pool.spawn(new_file_event(
-                                        event_ok.paths[0].clone(),
-                                        shared_data_clone.clone(),
-                                        pool_manager_clone,
-                                    ));
+                                event_ok.paths[0].clone(),
+                                shared_data_clone.clone(),
+                                pool_manager_clone,
+                            ));
                         }
                         _other => {
                             log::debug!("Event not handeled");
@@ -238,22 +311,10 @@ fn watch<P: AsRef<Path>>(
         }
     }
 
-    //Blocking All
-    /*for res in receiver {
-        match res {
-            Ok(event) => log::info!("Change: {event:?}"),
-            Err(error) => log::error!("Error: {error:?}"),
-        }
-    }*/
-
     Ok(())
 }
 
-async fn new_file_event(
-    path: PathBuf,
-    shared_data: AccessSharedData,
-    pool: deadpool_sqlite::Pool,
-) {
+async fn new_file_event(path: PathBuf, shared_data: AccessSharedData, pool: deadpool_sqlite::Pool) {
     // I hope the display all errors...
     let result = new_file_hander(path, shared_data, pool).await;
     if result.is_err() {
@@ -267,45 +328,54 @@ async fn new_file_hander(
     path: PathBuf,
     shared_data: AccessSharedData,
     pool: deadpool_sqlite::Pool,
-) -> Result<(),String> {
+) -> Result<(), String> {
     let python_path = shared_data.python_path();
+    let thumbnail_path = shared_data.thumbnail_path();
+    let file_actions = shared_data.file_actions();
     log::debug!("using python path {python_path:?}");
 
     //Todo move to new file worker or To lib for cli using
 
-    let mut file_attributes: HashMap<String,String> = HashMap::new();
+    let mut file_attributes: HashMap<String, String> = HashMap::new();
 
     let file_size = new_file_worker::print_file_size(&path).map_err(string_ify_ioerror)?;
     if helper::is_file_image(&path) {
         file_attributes.insert("Image".to_string(), "true".to_string());
 
-        let mut path2 = path.parent().unwrap().to_path_buf();
+        let mut path2 = PathBuf::from(thumbnail_path);
         let mut test_file_name = path.file_prefix().unwrap().to_os_string();
         test_file_name.push("_tbn.jpg");
         path2.push(test_file_name);
 
-        let image_size  = image_handler::make_thumbnail(&path, &path2)?;
+        let image_size = image_handler::make_thumbnail(&path, &path2)?;
 
         file_attributes.insert("Width".to_string(), image_size.width.to_string());
         file_attributes.insert("Heigth".to_string(), image_size.heigth.to_string());
+        file_attributes.insert("Thumbnail".to_string(), path2.to_str().unwrap().to_string());
     }
 
-    let app_exe = env::current_exe().map_err(string_ify_ioerror)?;
-    let app_path = app_exe.parent().unwrap();
-    let pysourcepath = app_path.join("../../python/");
-    let file_name = pysourcepath.join("example.py");
-    let python_result = python_runner::run_python_file(&file_name, &path);
-    match python_result {
-        Ok(_) => {
-            log::debug!("Python with no error");
-        }
-        Err(error) => {
-            log::error!("Python with error {error:?}");
-            return Err("Python excute Error".to_string());
+    let pysourcepath = Path::new(&python_path);
+
+    let mut python_attributes: HashMap<String,String> = HashMap::new();
+
+    let search = file_actions.iter().filter(|&action| helper::is_file_type(&path, &action.extention));
+    for entry in search {
+        let file_name = pysourcepath.join(&entry.file_name);
+        let python_result = python_runner::run_python_file(&file_name, &path, &entry.function_name);
+        match python_result {
+            Ok(_) => {
+                log::debug!("Python with no error");
+                for p_attrib in &python_result.unwrap() {
+                    python_attributes
+                        .insert(p_attrib.0.to_string(), p_attrib.1.to_string());
+                }
+            }
+            Err(error) => {
+                log::error!("Python with error {error:?}");
+                return Err("Python excute Error".to_string());
+            }
         }
     }
-
-    let python_attributes = python_result.unwrap();
 
     let mut file_entry = FileEntry::new();
     file_entry.name = path.file_name().unwrap().to_str().unwrap().to_string();
