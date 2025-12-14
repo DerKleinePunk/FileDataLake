@@ -352,6 +352,8 @@ async fn new_file_hander(
         file_attributes.insert("Width".to_string(), image_size.width.to_string());
         file_attributes.insert("Heigth".to_string(), image_size.heigth.to_string());
         file_attributes.insert("Thumbnail".to_string(), path2.to_str().unwrap().to_string());
+
+        image_handler::read_image_tags(&path);
     }
 
     let pysourcepath = Path::new(&python_path);
