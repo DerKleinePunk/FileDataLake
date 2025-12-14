@@ -12,6 +12,7 @@ use std::time::Duration;
 use tokio::runtime::{self, Builder};
 use crate::app_dtos::FileEntry;
 use crate::database_handler::LocalDbState;
+use crate::helper::string_ify_ioerror;
 
 //Hints
 //https://docs.rs/workerpool/latest/workerpool/
@@ -218,13 +219,11 @@ fn watch<P: AsRef<Path>>(
                         EventKind::Create(CreateKind::Any) => {
                             let shared_data_clone = shared_data.clone();
                             let pool_manager_clone = dbpool.clone();
-                            //Todo cath Error
-                            worker_pool.spawn(new_file_hander(
+                            worker_pool.spawn(new_file_event(
                                         event_ok.paths[0].clone(),
                                         shared_data_clone.clone(),
                                         pool_manager_clone,
                                     ));
-
                         }
                         _other => {
                             log::debug!("Event not handeled");
@@ -250,11 +249,16 @@ fn watch<P: AsRef<Path>>(
     Ok(())
 }
 
-
-fn stringify(x: String) -> notify::Error {
-    return notify::Error::new(notify::ErrorKind::Generic(
-                x,
-            ));
+async fn new_file_event(
+    path: PathBuf,
+    shared_data: AccessSharedData,
+    pool: deadpool_sqlite::Pool,
+) {
+    // I hope the display all errors...
+    let result = new_file_hander(path, shared_data, pool).await;
+    if result.is_err() {
+        log::error!("{:?}", result.err())
+    }
 }
 
 //https://medium.com/better-programming/easy-multi-threaded-shared-memory-in-rust-57344e9e8b97
@@ -263,7 +267,7 @@ async fn new_file_hander(
     path: PathBuf,
     shared_data: AccessSharedData,
     pool: deadpool_sqlite::Pool,
-) -> notify::Result<()> {
+) -> Result<(),String> {
     let python_path = shared_data.python_path();
     log::debug!("using python path {python_path:?}");
 
@@ -271,7 +275,7 @@ async fn new_file_hander(
 
     let mut file_attributes: HashMap<String,String> = HashMap::new();
 
-    let file_size = new_file_worker::print_file_size(&path)?;
+    let file_size = new_file_worker::print_file_size(&path).map_err(string_ify_ioerror)?;
     if helper::is_file_image(&path) {
         file_attributes.insert("Image".to_string(), "true".to_string());
 
@@ -280,13 +284,13 @@ async fn new_file_hander(
         test_file_name.push("_tbn.jpg");
         path2.push(test_file_name);
 
-        let image_size  = image_handler::make_thumbnail(&path, &path2).map_err(stringify)?;
+        let image_size  = image_handler::make_thumbnail(&path, &path2)?;
 
         file_attributes.insert("Width".to_string(), image_size.width.to_string());
         file_attributes.insert("Heigth".to_string(), image_size.heigth.to_string());
     }
 
-    let app_exe = env::current_exe()?;
+    let app_exe = env::current_exe().map_err(string_ify_ioerror)?;
     let app_path = app_exe.parent().unwrap();
     let pysourcepath = app_path.join("../../python/");
     let file_name = pysourcepath.join("example.py");
@@ -297,11 +301,7 @@ async fn new_file_hander(
         }
         Err(error) => {
             log::error!("Python with error {error:?}");
-            //Todo exception to text
-            let next_error = notify::Error::new(notify::ErrorKind::Generic(
-                "Python excute Error".to_string(),
-            ));
-            return Err(next_error);
+            return Err("Python excute Error".to_string());
         }
     }
 
@@ -332,10 +332,7 @@ async fn new_file_hander(
         }
         Err(error) => {
             log::error!("database with error {error:?}");
-            let next_error = notify::Error::new(notify::ErrorKind::Generic(
-                "database with error".to_string(),
-            ));
-            return Err(next_error);
+            return Err("database with error".to_string());
         }
     }
 

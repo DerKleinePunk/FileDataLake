@@ -5,6 +5,8 @@
 
     use image::{ImageFormat, ImageReader};
 
+    use crate::helper::string_ify_ioerror;
+
 
     //ittle_exif
     /*// Read in the metadata again & print it
@@ -14,7 +16,6 @@
 		println!("{:?}", tag);
 	} */
 
-fn stringify(x: std::io::Error) -> String { format!("error code: {x}") }
 fn stringify_image(x: image::ImageError) -> String { format!("error code: {x}") }
 
 pub struct ImageSize{
@@ -25,8 +26,8 @@ pub struct ImageSize{
 pub fn make_thumbnail<P: AsRef<Path>>(path: P, save_to: P) -> Result<ImageSize,String> {
 
     let img = ImageReader::open(path)
-        .map_err(stringify)?
-        .with_guessed_format().map_err(stringify)?
+        .map_err(string_ify_ioerror)?
+        .with_guessed_format().map_err(string_ify_ioerror)?
         .decode().map_err(stringify_image)?;
 
     //Todo hier geht das Seiten Verhältnis kaput

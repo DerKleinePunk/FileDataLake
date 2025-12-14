@@ -22,6 +22,8 @@ pub fn sha256_digest(path: &PathBuf) -> Result<String, std::io::Error> {
     Ok(format!("{:X}", digest))
 }
 
+pub fn string_ify_ioerror(x: std::io::Error) -> String { format!("error code: {x}") }
+
 pub fn is_file_type(path: &PathBuf, ext: &str) -> bool{
     path.is_file() && path.extension().map(|s| s == ext).unwrap_or(false)
 }
