@@ -2,6 +2,7 @@ use notify::event::CreateKind;
 use notify::{Config, EventKind, RecursiveMode, Watcher};
 use pyo3::prelude::*;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,6 +23,7 @@ mod database_handler;
 mod helper;
 mod new_file_worker;
 mod python_runner;
+mod image_handler;
 
 /// `AppConfigFile` implements `Default`
 impl ::std::default::Default for AppConfigFile {
@@ -31,6 +33,7 @@ impl ::std::default::Default for AppConfigFile {
             database: "fdl.db3".into(),
             watch_path: ".".to_string(),
             python_path: None,
+            thumbnail_path: None
         }
     }
 }
@@ -41,16 +44,19 @@ struct AppConfigFile {
     database: String,
     watch_path: String,
     python_path: Option<String>,
+    thumbnail_path: Option<String>,
 }
 
 struct SharedData {
     python_path: String,
+    thumbnail_path: String
 }
 
 impl SharedData {
-    pub fn new(python_path: String) -> SharedData {
+    pub fn new(python_path: &String, thumbnail_path: &String) -> SharedData {
         SharedData {
-            python_path: python_path,
+            python_path: python_path.clone(),
+            thumbnail_path: thumbnail_path.clone()
         }
     }
 }
@@ -69,6 +75,11 @@ impl AccessSharedData {
     pub fn python_path(&self) -> String {
         let lock = self.sd.lock().unwrap();
         lock.python_path.clone()
+    }
+
+    pub fn thumbnail_path(&self) -> String {
+        let lock = self.sd.lock().unwrap();
+        lock.thumbnail_path.clone()
     }
 }
 
@@ -115,6 +126,17 @@ async fn main() -> Result<(),()> {
         file_watch_path = cfg.watch_path.as_str();
     }
 
+    let python_path = "".to_string();
+    let thumbnail_path = "".to_string();
+
+    if cfg.python_path == None {
+        cfg.python_path = Some(python_path.clone());
+    }
+
+    if cfg.thumbnail_path == None {
+        cfg.thumbnail_path = Some(thumbnail_path.clone());
+    }
+
     //Save so User see the new Defaults
     confy::store("fdl", "reader", &cfg).unwrap();
 
@@ -139,9 +161,9 @@ async fn main() -> Result<(),()> {
     }
     //Todo check DB Version and try Update
 
-    let python_path = "".to_string();
 
-    let common_data = SharedData::new(python_path);
+
+    let common_data = SharedData::new(&python_path, &thumbnail_path);
 
     let shared_data = AccessSharedData {
         sd: Arc::new(Mutex::new(common_data)),
@@ -196,6 +218,7 @@ fn watch<P: AsRef<Path>>(
                         EventKind::Create(CreateKind::Any) => {
                             let shared_data_clone = shared_data.clone();
                             let pool_manager_clone = dbpool.clone();
+                            //Todo cath Error
                             worker_pool.spawn(new_file_hander(
                                         event_ok.paths[0].clone(),
                                         shared_data_clone.clone(),
@@ -227,6 +250,13 @@ fn watch<P: AsRef<Path>>(
     Ok(())
 }
 
+
+fn stringify(x: String) -> notify::Error {
+    return notify::Error::new(notify::ErrorKind::Generic(
+                x,
+            ));
+}
+
 //https://medium.com/better-programming/easy-multi-threaded-shared-memory-in-rust-57344e9e8b97
 //<P: AsRef<Path>>
 async fn new_file_hander(
@@ -237,21 +267,25 @@ async fn new_file_hander(
     let python_path = shared_data.python_path();
     log::debug!("using python path {python_path:?}");
 
-    let file_size = new_file_worker::print_file_size(&path)?;
-
-    //Todo https://docs.rs/image/latest/image/index.html
-    //pub fn thumbnail_exact(&self, nwidth: u32, nheight: u32) -> DynamicImage
-
-
-    //ittle_exif
-    /*// Read in the metadata again & print it
-	println!("\nPNG read result:");
-	for tag in &Metadata::new_from_path(png_path).unwrap()
-	{
-		println!("{:?}", tag);
-	} */
-
     //Todo move to new file worker or To lib for cli using
+
+    let mut file_attributes: HashMap<String,String> = HashMap::new();
+
+    let file_size = new_file_worker::print_file_size(&path)?;
+    if helper::is_file_image(&path) {
+        file_attributes.insert("Image".to_string(), "true".to_string());
+
+        let mut path2 = path.parent().unwrap().to_path_buf();
+        let mut test_file_name = path.file_prefix().unwrap().to_os_string();
+        test_file_name.push("_tbn.jpg");
+        path2.push(test_file_name);
+
+        let image_size  = image_handler::make_thumbnail(&path, &path2).map_err(stringify)?;
+
+        file_attributes.insert("Width".to_string(), image_size.width.to_string());
+        file_attributes.insert("Heigth".to_string(), image_size.heigth.to_string());
+    }
+
     let app_exe = env::current_exe()?;
     let app_path = app_exe.parent().unwrap();
     let pysourcepath = app_path.join("../../python/");
@@ -283,7 +317,13 @@ async fn new_file_hander(
             .insert(p_attrib.0.to_string(), p_attrib.1.to_string());
     }
 
-    println!("test {file_entry:?}");
+    for p_attrib in &file_attributes {
+        file_entry
+            .attributes
+            .insert(p_attrib.0.to_string(), p_attrib.1.to_string());
+    }
+
+    log::debug!("File Entry bevor save {file_entry:?}");
 
     let result_insert = LocalDbState::save_file_info(pool, file_entry).await;
     match result_insert {

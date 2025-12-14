@@ -21,3 +21,18 @@ pub fn sha256_digest(path: &PathBuf) -> Result<String, std::io::Error> {
 
     Ok(format!("{:X}", digest))
 }
+
+pub fn is_file_type(path: &PathBuf, ext: &str) -> bool{
+    path.is_file() && path.extension().map(|s| s == ext).unwrap_or(false)
+}
+
+pub fn is_file_image(path: &PathBuf) -> bool {
+    //Todo all Supported Formats im Image ...
+    let mut result = is_file_type(path,"png");
+
+    if !result {
+         result = is_file_type(path,"jpg");
+    }
+
+    result
+}
