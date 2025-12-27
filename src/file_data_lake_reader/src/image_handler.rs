@@ -44,6 +44,8 @@ pub fn make_thumbnail<P: AsRef<Path>>(path: P, save_to: P) -> Result<ImageSize, 
     Ok(result)
 }
 
+//https://github.com/kamadak/exif-rs/blob/master/examples/dumpexif.rs Faster ?
+
 pub fn read_image_tags(path: &Path) -> Result<HashMap<String, String>, String> {
     let mut result: HashMap<String, String> = HashMap::new();
     let meta_result = &Metadata::new_from_path(&path);
